@@ -30,16 +30,12 @@ def extract_styles_from_cell(cell):
     style_data = {}
     if not cell.has_style:
         return style_data
-
-    # Fuente (con color corregido)
     if cell.font:
         font_data = {
             'name': cell.font.name, 'sz': cell.font.sz, 'bold': cell.font.bold,
             'italic': cell.font.italic, 'color': get_serializable_color(cell.font.color)
         }
         style_data['font'] = {k: v for k, v in font_data.items() if v}
-
-    # Relleno (con color corregido)
     if cell.fill and cell.fill.fill_type:
         fill_data = {
             'pattern': cell.fill.fill_type,
@@ -47,8 +43,6 @@ def extract_styles_from_cell(cell):
             'end_color': get_serializable_color(cell.fill.end_color)
         }
         style_data['fill'] = {k: v for k, v in fill_data.items() if v}
-
-    # Bordes (con color corregido)
     if cell.border:
         def get_side_style(side):
             if side and side.style:
@@ -59,23 +53,32 @@ def extract_styles_from_cell(cell):
             'top': get_side_style(cell.border.top), 'bottom': get_side_style(cell.border.bottom)
         }
         style_data['border'] = {k: v for k, v in border_data.items() if v}
-
     if cell.alignment:
         alignment_data = {
             'horizontal': cell.alignment.horizontal, 'vertical': cell.alignment.vertical,
             'wrap_text': cell.alignment.wrap_text
         }
         style_data['alignment'] = {k: v for k, v in alignment_data.items() if v}
-
     if cell.number_format and cell.number_format != 'General':
         style_data['numFmt'] = cell.number_format
-
     return style_data
 
 def extract_conditional_formats(ws):
-    # Esta función ya estaba correcta.
     formats_data = []
-    # ... (código sin cambios)
+    for cf_rule_obj in ws.conditional_formatting:
+        range_string = str(cf_rule_obj.sqref)
+        for rule in cf_rule_obj.rules:
+            rule_info = { 'range': range_string, 'type': rule.type, 'priority': rule.priority }
+            if hasattr(rule, 'colorScale') and rule.colorScale is not None:
+                rule_info['color_scale'] = {
+                    'colors': [get_serializable_color(c) for c in rule.colorScale.color],
+                    'values': [cfvo.val for cfvo in rule.colorScale.cfvo]
+                }
+            elif hasattr(rule, 'dataBar') and rule.dataBar is not None:
+                rule_info['data_bar'] = { 'color': get_serializable_color(rule.dataBar.color), 'min_length': rule.dataBar.minLength, 'max_length': rule.dataBar.maxLength }
+            elif hasattr(rule, 'formula') and rule.formula:
+                rule_info['formula'] = rule.formula[0] if isinstance(rule.formula, list) else rule.formula
+            formats_data.append(rule_info)
     return formats_data
 
 def extract_charts(ws):
@@ -84,10 +87,8 @@ def extract_charts(ws):
     if not hasattr(ws, '_charts'):
         return charts_data
     for chart in ws._charts:
-        # Lógica para un ancla legible
-        anchor_str = str(chart.anchor) # Valor por defecto
+        anchor_str = str(chart.anchor)
         try:
-            # Intentar construir un ancla más bonita como "H3:P18"
             _from = chart.anchor._from
             to = chart.anchor.to
             from_col = get_column_letter(_from.col + 1)
@@ -96,9 +97,7 @@ def extract_charts(ws):
             to_row = to.row + 1
             anchor_str = f"{from_col}{from_row}:{to_col}{to_row}"
         except:
-            # Si falla, nos quedamos con la representación por defecto
             pass
-
         title_text = None
         if chart.title and hasattr(chart.title, 'text') and chart.title.text and hasattr(chart.title.text, 'v'):
             title_text = chart.title.text.v
@@ -119,10 +118,14 @@ def extract_charts(ws):
 # --- ENDPOINT PARA ANALIZAR EXCEL ---
 @app.route('/parse-excel', methods=['POST'])
 def parse_excel():
-    # Esta función principal no necesita cambios
     if 'excel_file' not in request.files:
         return jsonify({"error": "No se encontró el archivo en la petición (se esperaba el campo 'excel_file')."}), 400
-    # ... (resto del código sin cambios)
+    
+    # ESTAS LÍNEAS FALTABAN EN MI RESPUESTA ANTERIOR
+    file = request.files['excel_file']
+    if file.filename == '':
+        return jsonify({"error": "No se seleccionó ningún archivo."}), 400
+    
     try:
         in_memory_file = io.BytesIO(file.read())
         wb = load_workbook(filename=in_memory_file, data_only=True)
