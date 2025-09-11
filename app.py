@@ -4,12 +4,11 @@ import io
 import traceback
 from flask import Flask, request, jsonify
 
-# Importaciones de openpyxl (simplificadas para evitar errores)
+# Importaciones de openpyxl
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.cell import MergedCell
 from openpyxl.formatting.rule import Rule, ColorScaleRule, DataBarRule
-# Solo importamos 'Color', el tipo base, para máxima compatibilidad.
 from openpyxl.styles.colors import Color
 
 # --- Inicialización de la Aplicación Flask ---
@@ -19,22 +18,21 @@ app = Flask(__name__)
 
 def get_serializable_color(color_obj):
     """
-    Función final y robusta para convertir colores sin causar ImportErrors.
+    Función definitiva y simplificada.
+    Garantiza que la salida sea SIEMPRE un tipo primitivo (string o None).
     """
     if color_obj is None:
         return None
 
-    # Método 1: La mayoría de los objetos de color tienen un atributo 'rgb'.
+    # Si el objeto tiene un atributo 'rgb', es la fuente de verdad más fiable.
+    # Lo convertimos a string para asegurar que es un tipo primitivo.
     if hasattr(color_obj, 'rgb') and color_obj.rgb:
-        return color_obj.rgb
+        return str(color_obj.rgb)
 
-    # Método 2: Para tipos que no tienen 'rgb' (como Indexed o Theme),
-    # usamos str() para obtener una representación segura como texto.
-    # Esto también maneja el tipo 'RGB' que es esencialmente un string.
-    if isinstance(color_obj, str):
-        return color_obj
-    else:
-        return str(color_obj)
+    # Para CUALQUIER otro caso (incluyendo el objeto RGB que causa el error,
+    # Indexed, Theme, etc.), lo convertimos a su representación de string.
+    # Esto es a prueba de fallos.
+    return str(color_obj)
 
 def extract_styles_from_cell(cell):
     style_data = {}
