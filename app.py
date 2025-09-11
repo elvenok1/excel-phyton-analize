@@ -4,13 +4,13 @@ import io
 import traceback
 from flask import Flask, request, jsonify
 
-# Importaciones de openpyxl
+# Importaciones de openpyxl (simplificadas para evitar errores)
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.cell import MergedCell
 from openpyxl.formatting.rule import Rule, ColorScaleRule, DataBarRule
-# Importaciones explícitas de tipos de Color para un manejo robusto
-from openpyxl.styles.colors import Color, RGB, Indexed, Theme
+# Solo importamos 'Color', el tipo base, para máxima compatibilidad.
+from openpyxl.styles.colors import Color
 
 # --- Inicialización de la Aplicación Flask ---
 app = Flask(__name__)
@@ -19,31 +19,22 @@ app = Flask(__name__)
 
 def get_serializable_color(color_obj):
     """
-    Función robusta para convertir cualquier objeto de color de openpyxl 
-    a un string serializable (hexadecimal ARGB).
+    Función final y robusta para convertir colores sin causar ImportErrors.
     """
     if color_obj is None:
         return None
 
-    # El tipo más común es 'Color', que contiene el valor rgb.
-    if isinstance(color_obj, Color):
+    # Método 1: La mayoría de los objetos de color tienen un atributo 'rgb'.
+    if hasattr(color_obj, 'rgb') and color_obj.rgb:
         return color_obj.rgb
 
-    # El error específico es por el tipo 'RGB', que es básicamente un string.
-    if isinstance(color_obj, RGB):
-        return str(color_obj)
-
-    # Manejar otros tipos de color para evitar errores, aunque no extraigamos el valor real.
-    if isinstance(color_obj, (Indexed, Theme)):
-        # No podemos resolver estos fácilmente, pero evitamos el error de serialización.
-        return f"Color type '{type(color_obj).__name__}' not directly supported"
-
-    # Si ya es un string, devolverlo.
+    # Método 2: Para tipos que no tienen 'rgb' (como Indexed o Theme),
+    # usamos str() para obtener una representación segura como texto.
+    # Esto también maneja el tipo 'RGB' que es esencialmente un string.
     if isinstance(color_obj, str):
         return color_obj
-
-    # Como último recurso, devolver None para no romper el JSON.
-    return None
+    else:
+        return str(color_obj)
 
 def extract_styles_from_cell(cell):
     style_data = {}
@@ -149,6 +140,6 @@ def parse_excel():
         traceback.print_exc()
         return jsonify({"error": f"Error interno al procesar el archivo Excel: {str(e)}"}), 500
 
-# --- Punto de Entrada de la Aplicación ---
+# --- Punto de Entrada de la Aplicación (si se ejecuta directamente) ---
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
