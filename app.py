@@ -18,36 +18,24 @@ app = Flask(__name__)
 # === FUNCIONES DE AYUDA PARA EXTRAER DATOS ===
 
 def get_serializable_color(color_obj):
-    """
-    Función definitiva. Garantiza que la salida sea SIEMPRE un tipo 
-    primitivo (string hexadecimal o None).
-    """
+    """Garantiza que la salida sea SIEMPRE un tipo primitivo (string hexadecimal o None)."""
     if color_obj is None:
         return None
-    
-    # La mayoría de los objetos de color tienen un atributo '.rgb' que contiene el valor hexadecimal ARGB.
     if hasattr(color_obj, 'rgb') and color_obj.rgb:
         return str(color_obj.rgb)
-
-    # Para cualquier otro caso (colores indexados, de tema, etc.), convertimos a string 
-    # para evitar errores, aunque el valor no sea un color hexadecimal.
     return str(color_obj)
 
 def extract_styles_from_cell(cell):
-    """Versión pulida que extrae estilos de celda, incluyendo colores correctamente."""
+    """Extrae estilos de celda, incluyendo colores correctamente."""
     style_data = {}
     if not cell.has_style:
         return style_data
-
-    # Fuente (con color corregido)
     if cell.font:
         font_data = {
             'name': cell.font.name, 'sz': cell.font.sz, 'bold': cell.font.bold,
             'italic': cell.font.italic, 'color': get_serializable_color(cell.font.color)
         }
         style_data['font'] = {k: v for k, v in font_data.items() if v}
-
-    # Relleno (con color corregido)
     if cell.fill and cell.fill.fill_type:
         fill_data = {
             'pattern': cell.fill.fill_type,
@@ -55,8 +43,6 @@ def extract_styles_from_cell(cell):
             'end_color': get_serializable_color(cell.fill.end_color)
         }
         style_data['fill'] = {k: v for k, v in fill_data.items() if v}
-
-    # Bordes (con color corregido)
     if cell.border:
         def get_side_style(side):
             if side and side.style:
@@ -67,17 +53,14 @@ def extract_styles_from_cell(cell):
             'top': get_side_style(cell.border.top), 'bottom': get_side_style(cell.border.bottom)
         }
         style_data['border'] = {k: v for k, v in border_data.items() if v}
-
     if cell.alignment:
         alignment_data = {
             'horizontal': cell.alignment.horizontal, 'vertical': cell.alignment.vertical,
             'wrap_text': cell.alignment.wrap_text
         }
         style_data['alignment'] = {k: v for k, v in alignment_data.items() if v}
-
     if cell.number_format and cell.number_format != 'General':
         style_data['numFmt'] = cell.number_format
-
     return style_data
 
 def extract_conditional_formats(ws):
@@ -99,7 +82,7 @@ def extract_conditional_formats(ws):
     return formats_data
 
 def extract_charts(ws):
-    """Versión pulida que extrae el ancla del gráfico de forma legible."""
+    """Extrae el ancla del gráfico de forma legible."""
     charts_data = []
     if not hasattr(ws, '_charts'):
         return charts_data
@@ -144,7 +127,9 @@ def parse_excel():
     
     try:
         in_memory_file = io.BytesIO(file.read())
-        wb = load_workbook(filename=in_memory_file, data_only=True)
+        # --- CAMBIO CLAVE PARA OBTENER FÓRMULAS ---
+        wb = load_workbook(filename=in_memory_file, data_only=False)
+        
         parsed_data = {'sheets': []}
         for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
