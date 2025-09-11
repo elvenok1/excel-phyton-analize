@@ -46,11 +46,19 @@ def extract_styles_from_cell(cell):
     return style_data
 
 def extract_conditional_formats(ws):
+    """Extrae reglas de formato condicional (CORRECCIÓN FINAL)."""
     formats_data = []
     for cf_rule_obj in ws.conditional_formatting:
-        range_string = cf_rule_obj.sqref
+        # LA CORRECCIÓN CLAVE ESTÁ AQUÍ:
+        # Convertimos cf_rule_obj.sqref a string para manejar MultiCellRange.
+        range_string = str(cf_rule_obj.sqref) 
+        
         for rule in cf_rule_obj.rules:
-            rule_info = { 'range': range_string, 'type': rule.type, 'priority': rule.priority }
+            rule_info = {
+                'range': range_string, # Ahora garantizamos que es un string.
+                'type': rule.type,
+                'priority': rule.priority
+            }
             if hasattr(rule, 'colorScale') and rule.colorScale is not None:
                 rule_info['color_scale'] = {
                     'colors': [get_serializable_color(c) for c in rule.colorScale.color],
@@ -68,31 +76,22 @@ def extract_conditional_formats(ws):
     return formats_data
 
 def extract_charts(ws):
-    """Extrae toda la información de los gráficos (VERSIÓN FINAL CORREGIDA)."""
+    """Extrae toda la información de los gráficos."""
     charts_data = []
     if not hasattr(ws, '_charts'):
         return charts_data
-        
     for chart in ws._charts:
-        # Lógica robusta para extraer el título del gráfico
         title_text = None
         if chart.title and hasattr(chart.title, 'text') and chart.title.text and hasattr(chart.title.text, 'v'):
             title_text = chart.title.text.v
-        
         chart_info = {
-            'type': chart.__class__.__name__,
-            'title': title_text, # Usar la variable extraída
-            'anchor': str(chart.anchor),
-            'series': []
+            'type': chart.__class__.__name__, 'title': title_text, 'anchor': str(chart.anchor), 'series': []
         }
-
         if chart.series:
             for s in chart.series:
-                # Lógica robusta para la cabecera de la serie
                 header_text = None
                 if s.tx and hasattr(s.tx, 'v'):
                     header_text = s.tx.v
-
                 series_info = {
                     'header': header_text,
                     'values': str(s.val.ref) if s.val and hasattr(s.val, 'ref') else None,
