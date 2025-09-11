@@ -2,13 +2,15 @@
 
 import io
 from flask import Flask, request, jsonify, send_file
+import traceback
 
-# Importaciones de openpyxl
+# Importaciones de openpyxl (consolidadas y limpias)
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.styles.colors import Color
 from openpyxl.cell import MergedCell
-from openpyxl.formatting.rule import ColorScaleRule, IconSetRule, DataBarRule
+# Importamos todas las clases de reglas que podríamos necesitar
+from openpyxl.formatting.rule import Rule, ColorScaleRule, DataBarRule, FormulaRule
 
 # --- Inicialización de la Aplicación Flask ---
 app = Flask(__name__)
@@ -53,34 +55,31 @@ def extract_styles_from_cell(cell):
     return style_data
 
 def extract_conditional_formats(ws):
-    """Extrae todas las reglas de formato condicional de una hoja (CORREGIDO)."""
+    """Extrae todas las reglas de formato condicional (versión robusta con hasattr)."""
     formats_data = []
-    # La forma correcta es iterar directamente sobre el objeto conditional_formatting.
-    # Cada 'cf_rule_obj' contiene el rango y la lista de reglas para ese rango.
     for cf_rule_obj in ws.conditional_formatting:
-        # El rango de celdas se encuentra en el atributo 'sqref'.
         range_string = cf_rule_obj.sqref
-        # Las reglas específicas (DataBar, ColorScale, etc.) están en la lista 'rules'.
         for rule in cf_rule_obj.rules:
             rule_info = {
                 'range': range_string,
                 'type': rule.type,
                 'priority': rule.priority
             }
-            # Extraer detalles específicos según el tipo de regla
-            if isinstance(rule, ColorScaleRule) and rule.colorScale:
+            
+            # Usar hasattr() en lugar de isinstance() para evitar el error TypeError
+            if hasattr(rule, 'colorScale') and rule.colorScale is not None:
                 rule_info['color_scale'] = {
                     'colors': [get_serializable_color(c) for c in rule.colorScale.color],
                     'values': [cfvo.val for cfvo in rule.colorScale.cfvo]
                 }
-            elif isinstance(rule, DataBarRule) and rule.dataBar:
+            elif hasattr(rule, 'dataBar') and rule.dataBar is not None:
                 rule_info['data_bar'] = {
                     'color': get_serializable_color(rule.dataBar.color),
                     'min_length': rule.dataBar.minLength,
                     'max_length': rule.dataBar.maxLength,
                 }
             elif hasattr(rule, 'formula') and rule.formula:
-                # Esto es para reglas basadas en fórmulas
+                # La comprobación de 'list' es segura, ya que 'list' es un tipo nativo
                 rule_info['formula'] = rule.formula[0] if isinstance(rule.formula, list) else rule.formula
 
             formats_data.append(rule_info)
@@ -89,20 +88,24 @@ def extract_conditional_formats(ws):
 def extract_charts(ws):
     """Extrae toda la información de los gráficos de una hoja."""
     charts_data = []
+    if not hasattr(ws, '_charts'):
+        return charts_data
+        
     for chart in ws._charts:
         chart_info = {
             'type': chart.__class__.__name__,
-            'title': chart.title.text.text if chart.title and chart.title.text else None,
+            'title': chart.title.text.text if chart.title and hasattr(chart.title, 'text') and chart.title.text else None,
             'anchor': str(chart.anchor),
             'series': []
         }
-        for s in chart.series:
-            series_info = {
-                'header': s.tx.v if s.tx else None,
-                'values': str(s.val.ref) if s.val and hasattr(s.val, 'ref') else None,
-                'categories': str(s.cat.ref) if s.cat and hasattr(s.cat, 'ref') else None,
-            }
-            chart_info['series'].append(series_info)
+        if chart.series:
+            for s in chart.series:
+                series_info = {
+                    'header': s.tx.v if s.tx and hasattr(s.tx, 'v') else None,
+                    'values': str(s.val.ref) if s.val and hasattr(s.val, 'ref') else None,
+                    'categories': str(s.cat.ref) if s.cat and hasattr(s.cat, 'ref') else None,
+                }
+                chart_info['series'].append(series_info)
         charts_data.append(chart_info)
     return charts_data
 
@@ -147,9 +150,8 @@ def parse_excel():
             parsed_data['sheets'].append(sheet_data)
         return jsonify(parsed_data)
     except Exception as e:
-        import traceback
         print(f"Error en /parse-excel: {e}")
-        traceback.print_exc()
+        traceback.print_exc() # Imprime el rastreo completo del error en la consola
         return jsonify({"error": f"Error interno al procesar el archivo Excel: {str(e)}"}), 500
 
 # --- Punto de Entrada de la Aplicación ---
