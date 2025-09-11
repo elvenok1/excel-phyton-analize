@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 
 import io
-from flask import Flask, request, jsonify, send_file
 import traceback
+from flask import Flask, request, jsonify
 
 # Importaciones de openpyxl
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-from openpyxl.styles.colors import Color
 from openpyxl.cell import MergedCell
-from openpyxl.formatting.rule import Rule, ColorScaleRule, DataBarRule, FormulaRule
+from openpyxl.formatting.rule import Rule, ColorScaleRule, DataBarRule
+# Importaciones explícitas de tipos de Color para un manejo robusto
+from openpyxl.styles.colors import Color, RGB, Indexed, Theme
 
 # --- Inicialización de la Aplicación Flask ---
 app = Flask(__name__)
@@ -17,8 +18,31 @@ app = Flask(__name__)
 # === FUNCIONES DE AYUDA PARA EXTRAER DATOS ===
 
 def get_serializable_color(color_obj):
-    if color_obj and isinstance(color_obj, Color) and color_obj.rgb:
+    """
+    Función robusta para convertir cualquier objeto de color de openpyxl 
+    a un string serializable (hexadecimal ARGB).
+    """
+    if color_obj is None:
+        return None
+
+    # El tipo más común es 'Color', que contiene el valor rgb.
+    if isinstance(color_obj, Color):
         return color_obj.rgb
+
+    # El error específico es por el tipo 'RGB', que es básicamente un string.
+    if isinstance(color_obj, RGB):
+        return str(color_obj)
+
+    # Manejar otros tipos de color para evitar errores, aunque no extraigamos el valor real.
+    if isinstance(color_obj, (Indexed, Theme)):
+        # No podemos resolver estos fácilmente, pero evitamos el error de serialización.
+        return f"Color type '{type(color_obj).__name__}' not directly supported"
+
+    # Si ya es un string, devolverlo.
+    if isinstance(color_obj, str):
+        return color_obj
+
+    # Como último recurso, devolver None para no romper el JSON.
     return None
 
 def extract_styles_from_cell(cell):
@@ -46,37 +70,24 @@ def extract_styles_from_cell(cell):
     return style_data
 
 def extract_conditional_formats(ws):
-    """Extrae reglas de formato condicional (CORRECCIÓN FINAL)."""
     formats_data = []
     for cf_rule_obj in ws.conditional_formatting:
-        # LA CORRECCIÓN CLAVE ESTÁ AQUÍ:
-        # Convertimos cf_rule_obj.sqref a string para manejar MultiCellRange.
-        range_string = str(cf_rule_obj.sqref) 
-        
+        range_string = str(cf_rule_obj.sqref)
         for rule in cf_rule_obj.rules:
-            rule_info = {
-                'range': range_string, # Ahora garantizamos que es un string.
-                'type': rule.type,
-                'priority': rule.priority
-            }
+            rule_info = { 'range': range_string, 'type': rule.type, 'priority': rule.priority }
             if hasattr(rule, 'colorScale') and rule.colorScale is not None:
                 rule_info['color_scale'] = {
                     'colors': [get_serializable_color(c) for c in rule.colorScale.color],
                     'values': [cfvo.val for cfvo in rule.colorScale.cfvo]
                 }
             elif hasattr(rule, 'dataBar') and rule.dataBar is not None:
-                rule_info['data_bar'] = {
-                    'color': get_serializable_color(rule.dataBar.color),
-                    'min_length': rule.dataBar.minLength,
-                    'max_length': rule.dataBar.maxLength,
-                }
+                rule_info['data_bar'] = { 'color': get_serializable_color(rule.dataBar.color), 'min_length': rule.dataBar.minLength, 'max_length': rule.dataBar.maxLength }
             elif hasattr(rule, 'formula') and rule.formula:
                 rule_info['formula'] = rule.formula[0] if isinstance(rule.formula, list) else rule.formula
             formats_data.append(rule_info)
     return formats_data
 
 def extract_charts(ws):
-    """Extrae toda la información de los gráficos."""
     charts_data = []
     if not hasattr(ws, '_charts'):
         return charts_data
@@ -84,14 +95,11 @@ def extract_charts(ws):
         title_text = None
         if chart.title and hasattr(chart.title, 'text') and chart.title.text and hasattr(chart.title.text, 'v'):
             title_text = chart.title.text.v
-        chart_info = {
-            'type': chart.__class__.__name__, 'title': title_text, 'anchor': str(chart.anchor), 'series': []
-        }
+        chart_info = { 'type': chart.__class__.__name__, 'title': title_text, 'anchor': str(chart.anchor), 'series': [] }
         if chart.series:
             for s in chart.series:
                 header_text = None
-                if s.tx and hasattr(s.tx, 'v'):
-                    header_text = s.tx.v
+                if s.tx and hasattr(s.tx, 'v'): header_text = s.tx.v
                 series_info = {
                     'header': header_text,
                     'values': str(s.val.ref) if s.val and hasattr(s.val, 'ref') else None,
@@ -100,11 +108,6 @@ def extract_charts(ws):
                 chart_info['series'].append(series_info)
         charts_data.append(chart_info)
     return charts_data
-
-# --- ENDPOINT DE CHEQUEO DE SALUD ---
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "ok"}), 200
 
 # --- ENDPOINT PARA ANALIZAR EXCEL ---
 @app.route('/parse-excel', methods=['POST'])
